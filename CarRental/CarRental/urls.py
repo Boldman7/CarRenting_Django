@@ -1,4 +1,4 @@
-"""TestCarRenting URL Configuration
+"""CarRental URL Configuration
 
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/3.0/topics/http/urls/
@@ -14,18 +14,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, re_path
-from django.conf.urls import include, url
-
-import CarRentals.views as car_rentals
+from django.urls import path
 
 urlpatterns = [
-    url(r'^car-rentals/', include('CarRentals.urls')),
     path('admin/', admin.site.urls),
-    path('api/', car_rentals.AllTech.as_view()),
-    re_path(r'^api/(?P<pk>\d+)', car_rentals.TechView.as_view()),
-
-    # Sign Up, Sign Verify
-    path('api/sign-up', car_rentals.SignUpView.as_view()),
-    path('api/sign-verify', car_rentals.SignVerifyView.as_view()),
 ]
