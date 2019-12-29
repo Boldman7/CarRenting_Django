@@ -4,6 +4,8 @@ from django.db import models
 
 class User(models.Model):
 
+    email = models.CharField(max_length=200, blank=True)
+
     # sms-entry
     user_id = models.CharField(max_length=200)
     mobile = models.CharField(max_length=50)
@@ -23,10 +25,48 @@ class User(models.Model):
     endpoints_http = models.CharField(max_length=200)
     endpoints_mqtt = models.CharField(max_length=200)
     endpoints_uploader = models.CharField(max_length=200)
-    expires_at = models.DateTimeField()
+    expires_at = models.DateTimeField(blank=True)
     grant_type = models.CharField(max_length=200)
     href = models.CharField(max_length=200)
     owner_id = models.CharField(max_length=200)
     refresh_token = models.CharField(max_length=200)
     scope_1 = models.CharField(max_length=200)
     scope_2 = models.CharField(max_length=200)
+
+class Coverage(models.Model):
+
+    name = models.CharField(max_length=200)
+    user_id = models.IntegerField(max_length=200)
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    address = models.CharField(max_length=200, blank=True, null = True)
+    company_id = models.IntegerField(null = True)
+    start_at = models.DateTimeField(blank=True, null = True)
+    end_at = models.DateTimeField(blank=True, null = True)
+    video_mile = models.CharField(max_length=200, blank=True, null = True)
+    video_vehicle = models.CharField(max_length=200, blank=True, null = True)
+    state = models.IntegerField(blank=True, null = True)   # COVERED: 1, UNCOVERED: 2
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)
+
+class Company(models.Model):
+
+    name = models.CharField(max_length=200)
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    address = models.CharField(max_length=200, blank=True, null = True)
+    icon_url = models.CharField(max_length=200, blank = True, null = True)
+    price_per_year = models.FloatField(null = True)
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)
+
+class Claim(models.Model):
+
+    name = models.CharField(max_length=200)
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    address = models.CharField(max_length=200, blank=True, null = True)
+    icon_url = models.CharField(max_length=200, blank = True, null = True)
+    price_per_year = models.FloatField(null = True)
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)

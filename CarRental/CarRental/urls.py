@@ -15,7 +15,20 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.conf.urls import include, url
+
+import CarRentalApp.views as car_rental_app
 
 urlpatterns = [
+
     path('admin/', admin.site.urls),
+    path('api/sign-up', car_rental_app.SignUpView.as_view()),
+    path('api/sign-verify', car_rental_app.SignVerifyView.as_view()),
+    path('api/get-payment-methods', car_rental_app.GetPaymentMethodsView.as_view()),
+    path('api/get-user-profile', car_rental_app.GetUserProfileView.as_view()),
+    path('api/add-coverage', car_rental_app.AddCoverageView.as_view()),
+    path('api/get-company-list', car_rental_app.GetCompanyListView.as_view()),
+    path('api/get-active-coverage', car_rental_app.GetActiveCoverageView.as_view()),
+    path('api/cancel-coverage', car_rental_app.CancelCoverage.as_view())
+
 ]
