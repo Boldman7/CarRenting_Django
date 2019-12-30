@@ -564,6 +564,18 @@ class GetActiveCoverageView(APIView):
                         "price_per_year": company_price_per_year
                     }
 
+                    # Change the datetime field to timestamp
+                    start_at = coverage_start_at
+                    if start_at is None:
+                        start_at_timestamp = start_at
+                    else :
+                        start_at_timestamp = start_at.timestamp()
+                    end_at = coverage_end_at
+                    if end_at is None:
+                        end_at_timestamp = end_at
+                    else:
+                        end_at_timestamp = end_at.timestamp()
+
                     response_coverage = {
                         "id": coverage_id,
                         "name": coverage_name,
@@ -571,14 +583,14 @@ class GetActiveCoverageView(APIView):
                         "longitude": coverage_longitude,
                         "address": coverage_address,
                         "company": response_company,
-                        "start_at": coverage_start_at,
-                        "end_at": coverage_end_at,
+                        "start_at": start_at_timestamp,
+                        "end_at": end_at_timestamp,
                         "video_mile": coverage_video_mile,
                         "video_vehicle": coverage_video_vehicle,
                         "state": coverage_state}
 
                     response_data = {"success": "true", "data": {
-                        "message": "Getting company list succeeded.",
+                        "message": "Getting active coverage succeeded.",
                         "coverage": response_coverage}}
 
                     return Response(response_data, status=status.HTTP_200_OK)
@@ -619,6 +631,7 @@ class CancelCoverage(APIView):
                 history_content['address'] = coverage.address
                 history_content['company_id'] = coverage.company_id
 
+                # Change the datetime field to timestamp
                 start_at = coverage.start_at
                 if start_at != None:
                     history_content['start_at'] = start_at.timestamp()
