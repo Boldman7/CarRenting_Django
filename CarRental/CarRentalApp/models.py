@@ -63,10 +63,35 @@ class Company(models.Model):
 class Claim(models.Model):
 
     name = models.CharField(max_length=200)
-    latitude = models.FloatField()
-    longitude = models.FloatField()
-    address = models.CharField(max_length=200, blank=True, null = True)
-    icon_url = models.CharField(max_length=200, blank = True, null = True)
-    price_per_year = models.FloatField(null = True)
+    user_id = models.IntegerField()
+    coverage_id = models.IntegerField()
+    what_happened = models.CharField(max_length=200)
+    date_time_happened = models.DateTimeField()
+    time_happened = models.BigIntegerField()
+    latitude = models.FloatField(blank=True, null = True)
+    longitude = models.FloatField(blank = True, null = True)
+    address = models.CharField(max_length=200, blank = True, null = True)
+    damaged_part = models.IntegerField()
+    video = models.CharField(max_length=200, blank = True, null = True)
+    note = models.CharField(max_length=200, blank = True, null = True)
+    state = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add = True)
     updated_at = models.DateTimeField(auto_now = True)
+
+class Payment(models.Model):
+
+    user_id = models.IntegerField()
+    amount = models.IntegerField()
+    currency = models.CharField(max_length=200)
+    state = models.IntegerField(null = True)
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)
+
+class History(models.Model):
+
+    user_id = models.IntegerField()
+    type = models.CharField(max_length=200)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)
+

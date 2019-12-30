@@ -9,9 +9,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 
+from datetime import datetime
+from django.utils.timezone import make_aware
+from copy import deepcopy
+
 from .models import User
 from .models import Company
 from .models import Coverage
+from .models import Payment
+from .models import History
 
 # For parsing request from android app
 from .app_serializers import SignUpSerializer
@@ -20,6 +26,8 @@ from .app_serializers import SignVerifySerializer
 from .app_serializers import RequestVerifySerializer
 from .app_serializers import RequestPaymentSerializer
 from .app_serializers import AddCoverageSerializer
+from .app_serializers import AddClaimSerializer
+from .app_serializers import AddPaymentSerializer
 
 # For managing db
 from .serializers import UserEntrySerializer
@@ -27,6 +35,8 @@ from .serializers import UserEntrySerializer
 import json
 import requests
 import Adyen
+import logging
+import ast
 
 ##########################################################################   Login APIs   #######################################################################
 
@@ -235,11 +245,24 @@ class GetPaymentMethodsView(APIView):
     def post(self, request):
 
         access_token = request.data.get("access_token")
+        amount = request.data.get("amount")
+        currency = request.data.get("currency")
 
         # Check if there's the mobile number alreday in DB.
         existed_user = User.objects.filter(access_token = access_token).first()
 
         if existed_user != None:
+
+            # _mutable = request.data._mutable
+            # request_data = request.data
+            # request_data._mutable = True
+            # request_data['user_id'] = existed_user.id
+            # request_data['state'] = 1
+            # request_data._mutable = _mutable
+
+            request_data = deepcopy(request.data)
+            request_data['user_id'] = existed_user.id
+            request_data['state'] = 1
 
             adyen = Adyen.Adyen(
                 app_name = "CarRental",
@@ -254,10 +277,19 @@ class GetPaymentMethodsView(APIView):
 
             if result.status_code == 200:
 
-                response_data = {"success": "true", "data": {
-                    "message": "Getting payment methods succeeded.",
-                    "paymentMethods": result.message}}
-                return Response(response_data, status=status.HTTP_200_OK)
+                add_payment_serializer = AddPaymentSerializer(data=request_data)
+                if (add_payment_serializer.is_valid()):
+
+                    obj = add_payment_serializer.save();
+
+                    response_data = {"success": "true", "data": {
+                        "message": "Getting payment methods succeeded.",
+                        "paymentMethods": result.message,
+                        "payment_id": obj.id}}
+                    return Response(response_data, status=status.HTTP_200_OK)
+                else:
+                    response_data = {"success": "false", "data": {"message": add_payment_serializer.errors}}
+                    return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
             else:
                 response_data = {"success": "false", "data": {"message": "Getting payment methods failed."}}
                 return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
@@ -270,53 +302,122 @@ class PaymentView(APIView):
 
     def post(self, request):
 
-        request_payment_slz = RequestPaymentSerializer(data = request.data)
-        if (request_payment_slz.is_valid()):
-            amount = request_payment_slz.data.get("amount")
-            paymentMethod = request_payment_slz.data.get("paymentMethod")
+        # Get user_id from access_token
+        access_token = request.data.get("access_token")
+        payment_id = request.data.get("payment_id")
+        payment_component_data = request.data.get("paymentComponentData")
 
-            if amount == None:
-                message = "requried_amount"
-                response_data = {"success": "false", "data": {"message": message}}
+        payment_method = payment_component_data.get("paymentMethod")
+
+        existed_user = User.objects.filter(access_token = access_token).first()
+
+        if existed_user != None:
+
+            payment = Payment.objects.filter(id = payment_id).first()
+
+            if payment != None:
+
+                adyen = Adyen.Adyen(
+                    app_name="CarRental",
+                    xapikey="AQEqhmfuXNWTK0Qc+iSYk2Yxs8WYS4RYA4cYCzCc8PvE9PEKkua51zO8HkygEMFdWw2+5HzctViMSCJMYAc=-VnikbEENHj+JVke2cIJHsXNIaUsYWftXVA7MqLsE280=-w69eUf3zT5jJ9zZm",
+                    platform="test"
+                )
+
+                reference = "car_rental_payment" + str(payment_id)
+
+                result = adyen.checkout.payments({
+                    'amount':{
+                        'value': payment.amount,
+                        'currency': payment.currency
+                    },
+                    'reference': reference,
+                    'paymentMethod': payment_method,
+                    'merchantAccount': 'HabitAccount235ECOM',
+                    'channel': 'Android',
+                    'returnUrl': 'https://your-company.com/checkout?shopperOrder=12xy'
+                })
+
+                if result.status_code == 200:
+
+                    if 'action' in result.message:
+
+                        payment = Payment.objects.filter(id = payment_id).first()
+                        payment.state = 2
+                        payment.save()
+
+                        response_data = {"success": "true", "data": {
+                            "action": result.message['action'],
+                            "message": "More action needed."}}
+                    elif result.message['resultCode'] == 'Authorised' :
+
+                        payment = Payment.objects.filter(id = payment_id).first()
+                        payment.state = 7
+                        payment.save()
+
+                        response_data = {"success": "true", "data": {
+                            "message": "Payment succeeded.",
+                            "resultCode": result.message['resultCode']}}
+
+                    elif result.message['resultCode'] == 'Pending':
+
+                        payment = Payment.objects.filter(id=payment_id).first()
+                        payment.state = 6
+                        payment.save()
+
+                        response_data = {"success": "true", "data": {
+                            "message": "Payment is pending.",
+                            "resultCode": result.message['resultCode']}}
+
+                    elif result.message['resultCode'] == 'Received' :
+
+                        payment = Payment.objects.filter(id = payment_id).first()
+                        payment.state = 5
+                        payment.save()
+
+                        response_data = {"success": "true", "data": {
+                            "message": "Received the payment. Please wait.",
+                            "resultCode": result.message['resultCode']}}
+                    else :
+                        if result.message['resultCode'] == 'Refused':
+                            payment = Payment.objects.filter(id = payment_id).first()
+                            payment.state = 4
+                            payment.save()
+                        else:
+                            payment = Payment.objects.filter(id = payment_id).first()
+                            payment.state = 3
+                            payment.save()
+
+                        response_data = {"success": "false", "data": {
+                            "message": result.message['refusalReason'],
+                            "resultCode": result.message['resultCode']}}
+
+                    logger = logging.getLogger(__name__)
+                    logger.error(result.message['resultCode'])
+
+                    history_content = {}
+
+                    history_content['id'] = payment.id
+                    history_content['user_id'] = payment.user_id
+                    history_content['amount'] = payment.amount
+                    history_content['currency'] = payment.currency
+                    history_content['state'] = payment.state
+
+                    history_json_content = json.dumps(history_content)
+
+                    history_data = History(user_id = existed_user.id, type = "Payment", content = history_json_content)
+                    history_data.save()
+
+                    return Response(response_data, status=status.HTTP_200_OK)
+                else:
+                    response_data = {"success": "false", "data": {
+                        "message": "Payment failed."}}
+                    return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+
+            else:
+                response_data = {"success": "false", "data": {"message": "The payment information doesn't exist."}}
                 return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
-
-            if paymentMethod == None:
-                message = "required_payment_method"
-                response_data = {"success": "false", "data": {"message": message}}
-                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
-
-            adyen = Adyen.Adyen(
-                app_name="CarRental",
-                xapikey="AQEqhmfuXNWTK0Qc+iSYk2Yxs8WYS4RYA4cYCzCc8PvE9PEKkua51zO8HkygEMFdWw2+5HzctViMSCJMYAc=-VnikbEENHj+JVke2cIJHsXNIaUsYWftXVA7MqLsE280=-w69eUf3zT5jJ9zZm",
-                platform="test"
-            )
-
-            paymentMethod = paymentMethod
-            # Data object passed from paymentComponentData from the client app, parsed from JSON to a dictionary
-
-            result = adyen.checkout.payments({
-                'amount': {
-                    'value': amount,
-                    'currency': 'EUR'
-                },
-                'reference': 'YOUR_ORDER_NUMBER',
-                'paymentMethod': paymentMethod,
-                'merchantAccount': 'HabitAccount235ECOM'
-            })
-
-            if result.status_code == 200:
-                response_data = {"success": "true", "data": {"message": result}}
-                return Response(response_data, status=status.HTTP_200_OK)
-
-            # # Check if further action is needed
-            # if 'action' in result.message:
-            #     # Pass the action object to your front end
-            #     # result.message['action']
-            # else:
-            #     # No further action needed, pass the resultCode to your front end
-            #     # result.message['resultCode']
         else:
-            response_data = {"success": "false", "data": {"message": "Error"}}
+            response_data = {"success": "false", "data": {"message": "The access token is invalid."}}
             return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
 # Get user profile
@@ -358,16 +459,22 @@ class AddCoverageView(APIView):
         if existed_user != None:
 
             # Add user_id to the request data to save as a model field
-            _mutable = request.data._mutable
-            request_data = request.data
-            request_data._mutable = True
+
+            request_data = deepcopy(request.data)
             request_data['user_id'] = existed_user.id
-            request_data._mutable = _mutable
+            request_data['state'] = 1
 
             add_coverage_serializer = AddCoverageSerializer(data = request_data)
             if (add_coverage_serializer.is_valid()):
 
-                add_coverage_serializer.save();
+                obj = add_coverage_serializer.save();
+
+                history_content = deepcopy(request_data)
+                history_content['id'] = obj.id
+                json_content = json.dumps(history_content)
+
+                history_data = History(user_id = existed_user.id, type = "Coverage", content = str(json_content))
+                history_data.save()
 
                 response_data = {"success": "true", "data": {"message": "Adding coverage succeeded."}}
                 return Response(response_data, status=status.HTTP_200_OK)
@@ -502,12 +609,125 @@ class CancelCoverage(APIView):
                 coverage.state = 3
                 coverage.save()
 
+                history_content = {}
+
+                history_content['id'] = coverage.id
+                history_content['name'] = coverage.name
+                history_content['user_id'] = coverage.user_id
+                history_content['latitude'] = coverage.latitude
+                history_content['longitude'] = coverage.longitude
+                history_content['address'] = coverage.address
+                history_content['company_id'] = coverage.company_id
+
+                start_at = coverage.start_at
+                if start_at != None:
+                    history_content['start_at'] = start_at.timestamp()
+                else:
+                    history_content['start_at'] = None
+                end_at = coverage.end_at
+                if end_at != None:
+                    history_content['end_at'] = end_at.timestamp()
+                else:
+                    history_content['end_at'] = None
+                history_content['video_mile'] = coverage.video_mile
+                history_content['video_vehicle'] = coverage.video_vehicle
+                history_content['state'] = coverage.state
+
+                history_json_content = json.dumps(history_content)
+
+                history_data = History(user_id = existed_user.id, type = "Coverage", content = history_json_content)
+                history_data.save()
+
                 response_data = {"success": "true", "data": {
                     "message": "The coverage was cancelled successfully."}}
                 return Response(response_data, status=status.HTTP_200_OK)
             else:
                 response_data = {"success": "false", "data": {"message": "The coverage information doesn't exist."}}
                 return Response(response_data, status=status.HTTP_204_NO_CONTENT)
+        else:
+            response_data = {"success": "false", "data": {"message": "The access token is invalid."}}
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+
+# Add claim
+class AddClaimView(APIView):
+
+    def post(self, request):
+
+        # Get user_id from access_token
+        access_token = request.data.get("access_token")
+
+        existed_user = User.objects.filter(access_token = access_token).first()
+
+        if existed_user != None:
+
+            # Add user_id to the request data to save as a model field
+            # _mutable = request.data._mutable
+            # request_data = request.data
+            # request_data._mutable = True
+            # request_data['user_id'] = existed_user.id
+            # request_data._mutable = _mutable
+
+            request_data = deepcopy(request.data)
+            request_data['user_id'] = existed_user.id
+            request_data['state'] = 1
+
+            # For saving content to history table (not date_time_happenend)
+            history_content = deepcopy(request_data)
+
+            time_happenend = int(request_data.get("time_happened"))
+            datetime_happened = make_aware(datetime.fromtimestamp(time_happenend))
+            request_data['date_time_happened'] = datetime_happened
+
+            add_claim_serializer = AddClaimSerializer(data = request_data)
+            if (add_claim_serializer.is_valid()):
+
+                obj = add_claim_serializer.save();
+
+                history_content['id'] = obj.id
+                json_content = json.dumps(history_content)
+
+                history_data = History(user_id = existed_user.id, type = "Claim", content = str(json_content))
+                history_data.save()
+
+                response_data = {"success": "true", "data": {"message": "Adding coverage succeeded."}}
+                return Response(response_data, status=status.HTTP_200_OK)
+            else:
+                response_data = {"success": "false", "data": {"message": add_claim_serializer.errors}}
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            response_data = {"success": "false", "data": {"message": "The access token is invalid."}}
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Get history list (Coverage, Claim, Payment)
+class GetHistoryListView(APIView):
+
+    def post(self, request):
+
+        # Get user_id from access_token
+        access_token = request.data.get("access_token")
+        existed_user = User.objects.filter(access_token = access_token).first()
+
+        if existed_user != None:
+            history_list = History.objects.filter(user_id = existed_user.id).all()
+
+            response_history_list = []
+
+            for history in history_list:
+                history_id = history.id
+                history_type = history.type
+                history_content = history.content
+
+                json_content = json.loads(history_content)
+
+                record = {"id": history_id, "type": history_type, "content": json_content}
+                response_history_list.append(record)
+
+            response_data = {"success": "true", "data": {
+                "message": "Getting history list succeeded.",
+                "historyList": response_history_list}}
+            return Response(response_data, status=status.HTTP_200_OK)
+
         else:
             response_data = {"success": "false", "data": {"message": "The access token is invalid."}}
             return Response(response_data, status=status.HTTP_400_BAD_REQUEST)

@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
 from .models import Coverage
+from .models import Claim
+from .models import Payment
+from .models import History
 
 class SignUpSerializer(serializers.Serializer):
     mobile = serializers.CharField(required=False)
@@ -37,4 +40,22 @@ class AddCoverageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Coverage
+        fields = '__all__'
+
+class AddClaimSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Claim
+        fields = '__all__'
+
+class AddPaymentSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Payment
+        fields = '__all__'
+
+class AddHistorySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = History
         fields = '__all__'
